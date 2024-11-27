@@ -111,7 +111,6 @@ async def run_account(account):
             else:
                 print(f"No reward in chat {event.chat_id}. Pausing until 6 AM IST and tagging pinned message.")
                 paused_chats.add(event.chat_id)
-                await reply_to_pinned_message(client, event.chat_id)
                 await asyncio.sleep(seconds_until_next_day_6am())
                 print(f"Resuming guesses in chat {event.chat_id}.")
                 paused_chats.remove(event.chat_id)
