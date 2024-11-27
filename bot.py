@@ -18,7 +18,6 @@ accounts = [
     {"session_name": "account2", "chat_ids": [-4543779814]},
     {"session_name": "kashish1", "chat_ids": [-1002382167273]},
 ]
-
 # Cache directory
 cache_dir = "cache/"
 it_cache_dir = "IT/cache/"
@@ -50,6 +49,21 @@ async def send_guess_periodically(client, chat_ids, paused_chats):
             except Exception as e:
                 print(f"Error sending /guess to chat {chat_id}: {e}")
         await asyncio.sleep(60)
+
+async def reply_to_pinned_message(client, chat_id):
+    """Reply to the pinned message in a chat with '/give 3200'."""
+    try:
+        # Fetch the pinned message
+        result = await client(GetPinnedMessageRequest(peer=chat_id))
+        pinned_message = result.message
+
+        if pinned_message:
+            await client.send_message(chat_id, "/give 3200", reply_to=pinned_message.id)
+            print(f"Replied to pinned message in chat {chat_id} with '/give 3200'.")
+        else:
+            print(f"No pinned message found in chat {chat_id}.")
+    except Exception as e:
+        print(f"Error replying to pinned message in chat {chat_id}: {e}")
 
 async def run_account(account):
     """Run a single Telegram account with its associated chats."""
@@ -104,8 +118,9 @@ async def run_account(account):
                 if event.chat_id in paused_chats:
                     paused_chats.remove(event.chat_id)
             else:
-                print(f"No reward in chat {event.chat_id}. Pausing until 6 AM IST.")
+                print(f"No reward in chat {event.chat_id}. Pausing until 6 AM IST and tagging pinned message.")
                 paused_chats.add(event.chat_id)
+                await reply_to_pinned_message(client, event.chat_id)
                 await asyncio.sleep(seconds_until_next_day_6am())
                 print(f"Resuming guesses in chat {event.chat_id}.")
                 paused_chats.remove(event.chat_id)
