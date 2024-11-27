@@ -3,6 +3,7 @@ import random
 import os
 import asyncio
 import re
+from datetime import datetime, timedelta
 from telethon import events, TelegramClient
 from telethon.tl.types import PhotoStrippedSize
 import shutil
@@ -27,10 +28,21 @@ def sanitize_filename(filename):
     """Sanitize the filename by removing invalid characters."""
     return re.sub(r'[<>:"/\\|?*]', '_', filename)
 
-async def send_guess_periodically(client, chat_ids):
-    """Send /guess to all specified chats every minute."""
+def seconds_until_next_day_6am():
+    """Calculate the number of seconds until the next 6 AM IST."""
+    now = datetime.now()
+    next_6am = now.replace(hour=6, minute=0, second=0, microsecond=0)
+    if now.hour >= 6:
+        next_6am += timedelta(days=1)
+    return (next_6am - now).seconds
+
+async def send_guess_periodically(client, chat_ids, paused_chats):
+    """Send /guess to all specified chats every minute if not paused."""
     while True:
         for chat_id in chat_ids:
+            if chat_id in paused_chats:
+                print(f"Chat {chat_id} is paused. Skipping /guess.")
+                continue
             try:
                 await client.send_message(chat_id, '/guess')
                 print(f"Periodic /guess sent to chat {chat_id}.")
@@ -42,66 +54,64 @@ async def run_account(account):
     """Run a single Telegram account with its associated chats."""
     client = TelegramClient(account["session_name"], api_id, api_hash)
     chat_ids = account["chat_ids"]
-    last_guess_times = {chat_id: 0 for chat_id in chat_ids}  # Track the last guess time for each chat
+    paused_chats = set()  # Track chats that are paused
 
-    @client.on(events.NewMessage(from_users=572621020, pattern="Who's that pokemon?", incoming=True))
-    async def guesser(event):
+    @client.on(events.NewMessage(from_users=572621020, incoming=True))
+    async def handle_bot_message(event):
+        """Handle bot messages to guess Pokémon and check rewards."""
         if event.chat_id not in chat_ids:
             return
-        await asyncio.sleep(2)
-        correct_name = None
-        for size in event.message.photo.sizes:
-            if isinstance(size, PhotoStrippedSize):
-                size = str(size)
 
-            for file in os.listdir(cache_dir):
-                with open(f"{cache_dir}/{file}", "rb") as f:
-                    file_content = f.read()
-                    if file_content == size.encode("utf-8"):
-                        correct_name = file.split(".txt")[0]
-                        break
+        # Handle "Who's that Pokémon?" prompt
+        if "Who's that pokemon?" in event.message.text:
+            if event.chat_id in paused_chats:
+                print(f"Chat {event.chat_id} is paused. Ignoring Pokémon guess.")
+                return
 
-            if correct_name:
-                await client.send_message(event.chat_id, correct_name)
-                print(f"Guessed Pokémon in chat {event.chat_id}: {correct_name}")
-                await asyncio.sleep(5)
-                await client.send_message(event.chat_id, '/guess')
-                print(f"Sent /guess command in chat {event.chat_id}.")
-                last_guess_times[event.chat_id] = asyncio.get_event_loop().time()
+            await asyncio.sleep(2)
+            correct_name = None
+            for size in event.message.photo.sizes:
+                if isinstance(size, PhotoStrippedSize):
+                    size = str(size)
+
+                for file in os.listdir(cache_dir):
+                    with open(f"{cache_dir}/{file}", "rb") as f:
+                        file_content = f.read()
+                        if file_content == size.encode("utf-8"):
+                            correct_name = file.split(".txt")[0]
+                            break
+
+                if correct_name:
+                    await client.send_message(event.chat_id, correct_name)
+                    print(f"Guessed Pokémon in chat {event.chat_id}: {correct_name}")
+                    await asyncio.sleep(5)
+                    await client.send_message(event.chat_id, '/guess')
+                    print(f"Sent /guess command in chat {event.chat_id}.")
+                else:
+                    print(f"No cached size found for {size}. Saving for future use.")
+                    sanitized_name = sanitize_filename(str(size))
+                    it_cache_path = f"{it_cache_dir}/cache.txt"
+                    with open(it_cache_path, "wb") as file:
+                        file.write(size.encode("utf-8"))
+                    print(f"Saved Pokémon size for {sanitized_name} as cache.txt in IT/cache/")
+                break
+
+        # Handle reward confirmation
+        elif "The pokemon was " in event.message.text:
+            if "+5 💵" in event.message.text:
+                print(f"Reward received in chat {event.chat_id}. Continuing guesses.")
+                if event.chat_id in paused_chats:
+                    paused_chats.remove(event.chat_id)
             else:
-                print(f"No cached size found for {size}. Saving for future use.")
-                sanitized_name = sanitize_filename(str(size))
-                it_cache_path = f"{it_cache_dir}/cache.txt"
-                with open(it_cache_path, "wb") as file:
-                    file.write(size.encode("utf-8"))
-                print(f"Saved Pokémon size for {sanitized_name} as cache.txt in IT/cache/")
-
-            break
-
-    @client.on(events.NewMessage(from_users=572621020, pattern="The pokemon was ", incoming=True))
-    async def cache_pokemon(event):
-        if event.chat_id not in chat_ids:
-            return
-        pokemon_name = event.message.text.split("The pokemon was ")[1].split(" ")[0]
-        sanitized_name = sanitize_filename(pokemon_name)
-
-        it_cache_path = f"{it_cache_dir}/cache.txt"
-        final_cache_path = f"{cache_dir}/{sanitized_name}.txt"
-
-        if os.path.exists(it_cache_path):
-            shutil.move(it_cache_path, final_cache_path)
-            print(f"Moved cached Pokémon for chat {event.chat_id}: {sanitized_name} to cache.")
-            with open(final_cache_path, 'a') as file:
-                file.write(f"Pokémon name: {sanitized_name}\n")
-
-            await asyncio.sleep(60)
-            await client.send_message(event.chat_id, '/guess')
-            print(f"Resuming /guess in chat {event.chat_id}.")
-        else:
-            print(f"No cached size found for {sanitized_name} in IT/cache/.")
+                print(f"No reward in chat {event.chat_id}. Pausing until 6 AM IST.")
+                paused_chats.add(event.chat_id)
+                await asyncio.sleep(seconds_until_next_day_6am())
+                print(f"Resuming guesses in chat {event.chat_id}.")
+                paused_chats.remove(event.chat_id)
 
     @client.on(events.NewMessage(from_users=572621020, pattern="⚠ Too many commands are being used", incoming=True))
     async def handle_too_many_commands(event):
+        """Handle 'Too many commands' message."""
         if event.chat_id not in chat_ids:
             return
         print(f"Too many commands in chat {event.chat_id}. Waiting for 20 seconds.")
@@ -111,7 +121,7 @@ async def run_account(account):
 
     await client.start()
     print(f"Bot started for account: {account['session_name']}")
-    asyncio.create_task(send_guess_periodically(client, chat_ids))
+    asyncio.create_task(send_guess_periodically(client, chat_ids, paused_chats))
 
     for chat_id in chat_ids:
         await client.send_message(chat_id, '/guess')
