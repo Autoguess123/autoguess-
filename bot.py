@@ -5,8 +5,9 @@ import asyncio
 import re
 from datetime import datetime, timedelta
 from telethon import events, TelegramClient
+from telethon.errors.rpcerrorlist import PeerIdInvalidError
+from telethon.tl.functions.messages import GetPinnedMessageRequest
 from telethon.tl.types import PhotoStrippedSize
-import shutil
 
 # Telegram API credentials
 api_id = 2282111
@@ -18,15 +19,18 @@ accounts = [
     {"session_name": "account2", "chat_ids": [-4543779814]},
     {"session_name": "kashish1", "chat_ids": [-1002382167273]},
 ]
+
 # Cache directory
 cache_dir = "cache/"
 it_cache_dir = "IT/cache/"
 os.makedirs(cache_dir, exist_ok=True)
 os.makedirs(it_cache_dir, exist_ok=True)
 
+
 def sanitize_filename(filename):
     """Sanitize the filename by removing invalid characters."""
     return re.sub(r'[<>:"/\\|?*]', '_', filename)
+
 
 def seconds_until_next_day_6am():
     """Calculate the number of seconds until the next 6 AM IST."""
@@ -36,6 +40,7 @@ def seconds_until_next_day_6am():
         next_6am += timedelta(days=1)
     return (next_6am - now).seconds
 
+
 async def send_guess_periodically(client, chat_ids, paused_chats):
     """Send /guess to all specified chats every minute if not paused."""
     while True:
@@ -44,16 +49,19 @@ async def send_guess_periodically(client, chat_ids, paused_chats):
                 print(f"Chat {chat_id} is paused. Skipping /guess.")
                 continue
             try:
-                await client.send_message(chat_id, '/guess')
+                entity = await client.get_input_entity(chat_id)  # Validate chat_id
+                await client.send_message(entity, '/guess')
                 print(f"Periodic /guess sent to chat {chat_id}.")
+            except PeerIdInvalidError:
+                print(f"Invalid Peer for chat_id {chat_id}. Skipping.")
             except Exception as e:
                 print(f"Error sending /guess to chat {chat_id}: {e}")
         await asyncio.sleep(60)
 
+
 async def reply_to_pinned_message(client, chat_id):
     """Reply to the pinned message in a chat with '/give 3200'."""
     try:
-        # Fetch the pinned message
         result = await client(GetPinnedMessageRequest(peer=chat_id))
         pinned_message = result.message
 
@@ -64,6 +72,7 @@ async def reply_to_pinned_message(client, chat_id):
             print(f"No pinned message found in chat {chat_id}.")
     except Exception as e:
         print(f"Error replying to pinned message in chat {chat_id}: {e}")
+
 
 async def run_account(account):
     """Run a single Telegram account with its associated chats."""
@@ -123,8 +132,6 @@ async def run_account(account):
                 print(f"Resuming guesses in chat {event.chat_id}.")
                 paused_chats.remove(event.chat_id)
 
-
-
     @client.on(events.NewMessage(from_users=572621020, pattern="⚠ Too many commands are being used", incoming=True))
     async def handle_too_many_commands(event):
         """Handle 'Too many commands' message."""
@@ -140,14 +147,22 @@ async def run_account(account):
     asyncio.create_task(send_guess_periodically(client, chat_ids, paused_chats))
 
     for chat_id in chat_ids:
-        await client.send_message(chat_id, '/guess')
-        print(f"Sent initial /guess in chat {chat_id}.")
+        try:
+            entity = await client.get_input_entity(chat_id)
+            await client.send_message(entity, '/guess')
+            print(f"Sent initial /guess in chat {chat_id}.")
+        except PeerIdInvalidError:
+            print(f"Invalid Peer for chat_id {chat_id}. Skipping.")
+        except Exception as e:
+            print(f"Error sending initial /guess to chat {chat_id}: {e}")
 
     await client.run_until_disconnected()
+
 
 async def health_check(request):
     """Health check endpoint."""
     return web.Response(text="OK", status=200)
+
 
 async def start_health_server():
     """Starts the health check server."""
@@ -159,10 +174,12 @@ async def start_health_server():
     await site.start()
     print("Health check server running on port 8000")
 
+
 async def main():
     """Run all accounts and the health server concurrently."""
     tasks = [run_account(account) for account in accounts]
     tasks.append(start_health_server())  # Add the health server task
     await asyncio.gather(*tasks)
+
 
 asyncio.run(main())
