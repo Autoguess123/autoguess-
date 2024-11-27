@@ -56,79 +56,87 @@ async def send_guess_periodically(client, chat_ids):
 
 async def run_account(account):
     """Run a single Telegram account with its associated chats."""
-    client = TelegramClient(account["session_name"], api_id, api_hash)
-    chat_ids = account["chat_ids"]
-    account_link = account["link"]  # Get the link for the account
+    try:
+        client = TelegramClient(account["session_name"], api_id, api_hash)
+        chat_ids = account["chat_ids"]
+        account_link = account["link"]  # Get the link for the account
 
-    @client.on(events.NewMessage(from_users=572621020, incoming=True))
-    async def handle_bot_message(event):
-        """Handle bot messages to guess Pokémon and check rewards."""
-        if event.chat_id not in chat_ids:
-            return
-
-        # Handle "Who's that Pokémon?" prompt
-        if "Who's that pokemon?" in event.message.text:
-            if event.chat_id in paused_chats:
-                print(f"Chat {event.chat_id} is paused. Ignoring Pokémon guess.")
+        @client.on(events.NewMessage(from_users=572621020, incoming=True))
+        async def handle_bot_message(event):
+            """Handle bot messages to guess Pokémon and check rewards."""
+            if event.chat_id not in chat_ids:
                 return
 
-            await asyncio.sleep(2)
-            correct_name = None
-            for size in event.message.photo.sizes:
-                if isinstance(size, PhotoStrippedSize):
-                    size = str(size)
-
-                for file in os.listdir(cache_dir):
-                    with open(f"{cache_dir}/{file}", "rb") as f:
-                        file_content = f.read()
-                        if file_content == size.encode("utf-8"):
-                            correct_name = file.split(".txt")[0]
-                            break
-
-            if correct_name:
-                await client.send_message(event.chat_id, correct_name)
-                print(f"Guessed Pokémon in chat {event.chat_id}: {correct_name}")
-                await asyncio.sleep(5)
-                await client.send_message(event.chat_id, '/guess')
-                print(f"Sent /guess command in chat {event.chat_id}.")
-            else:
-                print(f"No cached size found for {size}. Saving for future use.")
-                sanitized_name = sanitize_filename(str(size))
-                it_cache_path = f"{it_cache_dir}/cache.txt"
-                with open(it_cache_path, "wb") as file:
-                    file.write(size.encode("utf-8"))
-                print(f"Saved Pokémon size for {sanitized_name} as cache.txt in IT/cache/")
-            return  # Exit the function here, no need for break
-
-        # Handle reward confirmation and pause if no reward after guess
-        elif "guessed" in event.message.text and "The pokemon was " in event.message.text:
-            # Check if the reward was NOT given (i.e., "+5 💵" not in the message)
-            if "+5 💵" not in event.message.text:
-                print(f"No reward after guessing. Pausing until 6 AM IST and tagging pinned message.")
-                paused_chats[event.chat_id] = {"link": account_link, "paused": True}
-                await reply_to_pinned_message(client, event.chat_id, account_link)
-                await asyncio.sleep(seconds_until_next_day_6am())
-                print(f"Resuming guesses in chat {event.chat_id}.")
-                paused_chats.pop(event.chat_id)
-
-            else:
-                print(f"Reward received after guessing. Continuing guesses.")
+            # Handle "Who's that Pokémon?" prompt
+            if "Who's that pokemon?" in event.message.text:
                 if event.chat_id in paused_chats:
+                    print(f"Chat {event.chat_id} is paused. Ignoring Pokémon guess.")
+                    return
+
+                await asyncio.sleep(2)
+                correct_name = None
+                for size in event.message.photo.sizes:
+                    if isinstance(size, PhotoStrippedSize):
+                        size = str(size)
+
+                    for file in os.listdir(cache_dir):
+                        with open(f"{cache_dir}/{file}", "rb") as f:
+                            file_content = f.read()
+                            if file_content == size.encode("utf-8"):
+                                correct_name = file.split(".txt")[0]
+                                break
+
+                if correct_name:
+                    await client.send_message(event.chat_id, correct_name)
+                    print(f"Guessed Pokémon in chat {event.chat_id}: {correct_name}")
+                    await asyncio.sleep(5)
+                    await client.send_message(event.chat_id, '/guess')
+                    print(f"Sent /guess command in chat {event.chat_id}.")
+                else:
+                    print(f"No cached size found for {size}. Saving for future use.")
+                    sanitized_name = sanitize_filename(str(size))
+                    it_cache_path = f"{it_cache_dir}/cache.txt"
+                    with open(it_cache_path, "wb") as file:
+                        file.write(size.encode("utf-8"))
+                    print(f"Saved Pokémon size for {sanitized_name} as cache.txt in IT/cache/")
+                return  # Exit the function here, no need for break
+
+            # Handle reward confirmation and pause if no reward after guess
+            elif "guessed" in event.message.text and "The pokemon was " in event.message.text:
+                # Check if the reward was NOT given (i.e., "+5 💵" not in the message)
+                if "+5 💵" not in event.message.text:
+                    print(f"No reward after guessing. Pausing until 6 AM IST and tagging pinned message.")
+                    paused_chats[event.chat_id] = {"link": account_link, "paused": True}
+                    await reply_to_pinned_message(client, event.chat_id, account_link)
+                    await asyncio.sleep(seconds_until_next_day_6am())
+                    print(f"Resuming guesses in chat {event.chat_id}.")
                     paused_chats.pop(event.chat_id)
+
+                else:
+                    print(f"Reward received after guessing. Continuing guesses.")
+                    if event.chat_id in paused_chats:
+                        paused_chats.pop(event.chat_id)
+
+        await client.start()
+        print(f"Bot started for account: {account['session_name']}")
+        asyncio.create_task(send_guess_periodically(client, chat_ids))
+
+        for chat_id in chat_ids:
+            await client.send_message(chat_id, '/guess')
+            print(f"Sent initial /guess in chat {chat_id}.")
+
+        await client.run_until_disconnected()
+
+    except Exception as e:
+        print(f"Error running account {account['session_name']}: {e}")
 
 async def reply_to_pinned_message(client, chat_id, account_link):
     """Reply to the pinned message in a chat with '/give 3200'."""
     try:
-        # Fetch the pinned message
-        result = await client(GetPinnedMessageRequest(peer=chat_id))
-        pinned_message = result.message
-
-        if pinned_message:
-            # Reply to the pinned message
-            await client.send_message(chat_id, "/give 3200", reply_to=pinned_message.id)
-            print(f"Replied to pinned message in chat {chat_id} with '/give 3200'.")
-        else:
-            print(f"No pinned message found in chat {chat_id}.")
+        # Simulate reply to pinned message using link
+        print(f"Using link: {account_link}")
+        await client.send_message(chat_id, "/give 3200")
+        print(f"Replied to chat {chat_id} with '/give 3200'.")
     except Exception as e:
         print(f"Error replying to pinned message in chat {chat_id}: {e}")
 
@@ -141,16 +149,6 @@ async def reply_to_pinned_message(client, chat_id, account_link):
         await asyncio.sleep(20)
         print(f"Resuming guesses in chat {event.chat_id}.")
         await client.send_message(event.chat_id, '/guess')
-
-    await client.start()
-    print(f"Bot started for account: {account['session_name']}")
-    asyncio.create_task(send_guess_periodically(client, chat_ids))
-
-    for chat_id in chat_ids:
-        await client.send_message(chat_id, '/guess')
-        print(f"Sent initial /guess in chat {chat_id}.")
-
-    await client.run_until_disconnected()
 
 async def health_check(request):
     """Health check endpoint."""
@@ -166,10 +164,16 @@ async def start_health_server():
     await site.start()
     print("Health check server running on port 8000")
 
+async def keep_alive():
+    """A keep-alive task to ensure the event loop runs forever."""
+    while True:
+        await asyncio.sleep(60)  # Sleep forever
+
 async def main():
     """Run all accounts and the health server concurrently."""
     tasks = [run_account(account) for account in accounts]
     tasks.append(start_health_server())  # Add the health server task
+    tasks.append(keep_alive())  # Keep the event loop alive
     await asyncio.gather(*tasks)
 
 asyncio.run(main())
