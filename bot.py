@@ -6,7 +6,6 @@ import re
 from datetime import datetime, timedelta
 from telethon import events, TelegramClient
 from telethon.tl.types import PhotoStrippedSize
-from telethon.tl.functions.messages import GetPinnedMessageRequest
 import shutil
 
 # Telegram API credentials
