@@ -88,12 +88,12 @@ async def run_account(account):
                 await asyncio.sleep(seconds_until_next_day_6am())
                 paused_chats.remove(event.chat_id)
 
-    @client.on(events.NewMessage(from_users=572621020, pattern="⚠ Too many commands are being used", incoming=True))
-    async def handle_too_many_commands(event):
-        if event.chat_id not in chat_ids:
-            return
-        await asyncio.sleep(20)
-        await client.send_message(event.chat_id, '/guess')
+    @client.on(events.NewMessage(pattern="/stop", incoming=True))
+    async def handle_stop_command(event):
+        if event.chat_id in chat_ids:
+            paused_chats.add(event.chat_id)
+            print(f"/stop received. Pausing guesses in chat {event.chat_id} until 6 AM IST.")
+            await event.reply("Bot paused in this chat until 6 AM IST.")
 
     await client.start()
     asyncio.create_task(send_guess_periodically(client, chat_ids, paused_chats))
