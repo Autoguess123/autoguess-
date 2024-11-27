@@ -6,6 +6,7 @@ import re
 from datetime import datetime, timedelta
 from telethon import events, TelegramClient
 from telethon.tl.types import PhotoStrippedSize
+from telethon.tl.functions.messages import GetPinnedMessageRequest
 import shutil
 
 # Telegram API credentials
@@ -25,6 +26,9 @@ it_cache_dir = "IT/cache/"
 os.makedirs(cache_dir, exist_ok=True)
 os.makedirs(it_cache_dir, exist_ok=True)
 
+# Dictionary to keep track of paused chats across all accounts
+paused_chats = {}
+
 def sanitize_filename(filename):
     """Sanitize the filename by removing invalid characters."""
     return re.sub(r'[<>:"/\\|?*]', '_', filename)
@@ -37,7 +41,7 @@ def seconds_until_next_day_6am():
         next_6am += timedelta(days=1)
     return (next_6am - now).seconds
 
-async def send_guess_periodically(client, chat_ids, paused_chats):
+async def send_guess_periodically(client, chat_ids):
     """Send /guess to all specified chats every minute if not paused."""
     while True:
         for chat_id in chat_ids:
@@ -55,7 +59,6 @@ async def run_account(account):
     """Run a single Telegram account with its associated chats."""
     client = TelegramClient(account["session_name"], api_id, api_hash)
     chat_ids = account["chat_ids"]
-    paused_chats = {}  # Track chats that are paused (change from set to dict)
     account_link = account["link"]  # Get the link for the account
 
     @client.on(events.NewMessage(from_users=572621020, incoming=True))
@@ -117,22 +120,16 @@ async def run_account(account):
 async def reply_to_pinned_message(client, chat_id, account_link):
     """Reply to the pinned message in a chat with '/give 3200'."""
     try:
-        # Check if the chat is paused and if a link is available
-        if chat_id in paused_chats and paused_chats[chat_id]["paused"]:
-            print(f"Using link: {account_link}")
-            
-            # Fetch the pinned message
-            result = await client(GetPinnedMessageRequest(peer=chat_id))
-            pinned_message = result.message
+        # Fetch the pinned message
+        result = await client(GetPinnedMessageRequest(peer=chat_id))
+        pinned_message = result.message
 
-            if pinned_message:
-                # Reply to the pinned message
-                await client.send_message(chat_id, "/give 3200", reply_to=pinned_message.id)
-                print(f"Replied to pinned message in chat {chat_id} with '/give 3200'.")
-            else:
-                print(f"No pinned message found in chat {chat_id}.")
+        if pinned_message:
+            # Reply to the pinned message
+            await client.send_message(chat_id, "/give 3200", reply_to=pinned_message.id)
+            print(f"Replied to pinned message in chat {chat_id} with '/give 3200'.")
         else:
-            print(f"No pause link found for chat {chat_id}.")
+            print(f"No pinned message found in chat {chat_id}.")
     except Exception as e:
         print(f"Error replying to pinned message in chat {chat_id}: {e}")
 
@@ -148,7 +145,7 @@ async def reply_to_pinned_message(client, chat_id, account_link):
 
     await client.start()
     print(f"Bot started for account: {account['session_name']}")
-    asyncio.create_task(send_guess_periodically(client, chat_ids, paused_chats))
+    asyncio.create_task(send_guess_periodically(client, chat_ids))
 
     for chat_id in chat_ids:
         await client.send_message(chat_id, '/guess')
