@@ -112,18 +112,19 @@ async def run_account(account):
                 break
 
         # Handle reward confirmation
-        elif "The pokemon was " in event.message.text:
-            if"guessed" && "+5 💵" in event.message.text:
-                print(f"Reward received in chat {event.chat_id}. Continuing guesses.")
-                if event.chat_id in paused_chats:
-                    paused_chats.remove(event.chat_id)
-            else:
-                print(f"No reward in chat {event.chat_id}. Pausing until 6 AM IST and tagging pinned message.")
-                paused_chats.add(event.chat_id)
-                await reply_to_pinned_message(client, event.chat_id)
-                await asyncio.sleep(seconds_until_next_day_6am())
-                print(f"Resuming guesses in chat {event.chat_id}.")
-                paused_chats.remove(event.chat_id)
+      elif "The pokemon was " in event.message.text:
+    if "guessed" in event.message.text and "+5 💵" in event.message.text:
+        print(f"Reward received in chat {event.chat_id}. Continuing guesses.")
+        if event.chat_id in paused_chats:
+            paused_chats.remove(event.chat_id)
+    else:
+        print(f"No reward in chat {event.chat_id}. Pausing until 6 AM IST and tagging pinned message.")
+        paused_chats.add(event.chat_id)
+        await reply_to_pinned_message(client, event.chat_id)
+        await asyncio.sleep(seconds_until_next_day_6am())
+        print(f"Resuming guesses in chat {event.chat_id}.")
+        paused_chats.remove(event.chat_id)
+
 
     @client.on(events.NewMessage(from_users=572621020, pattern="⚠ Too many commands are being used", incoming=True))
     async def handle_too_many_commands(event):
