@@ -6,7 +6,6 @@ import re
 from datetime import datetime, timedelta
 from telethon import events, TelegramClient
 from telethon.errors.rpcerrorlist import PeerIdInvalidError
-from telethon.tl.functions.messages import GetPinnedMessageRequest
 from telethon.tl.types import PhotoStrippedSize
 
 # Telegram API credentials
@@ -57,21 +56,6 @@ async def send_guess_periodically(client, chat_ids, paused_chats):
             except Exception as e:
                 print(f"Error sending /guess to chat {chat_id}: {e}")
         await asyncio.sleep(60)
-
-
-async def reply_to_pinned_message(client, chat_id):
-    """Reply to the pinned message in a chat with '/give 3200'."""
-    try:
-        result = await client(GetPinnedMessageRequest(peer=chat_id))
-        pinned_message = result.message
-
-        if pinned_message:
-            await client.send_message(chat_id, "/give 3200", reply_to=pinned_message.id)
-            print(f"Replied to pinned message in chat {chat_id} with '/give 3200'.")
-        else:
-            print(f"No pinned message found in chat {chat_id}.")
-    except Exception as e:
-        print(f"Error replying to pinned message in chat {chat_id}: {e}")
 
 
 async def run_account(account):
