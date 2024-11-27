@@ -6,7 +6,6 @@ import re
 from datetime import datetime, timedelta
 from telethon import events, TelegramClient
 from telethon.tl.types import PhotoStrippedSize
-from telethon.tl.functions.messages import GetPinnedMessageRequest
 import shutil
 
 # Telegram API credentials
@@ -110,12 +109,11 @@ async def run_account(account):
                     with open(it_cache_path, "wb") as file:
                         file.write(size.encode("utf-8"))
                     print(f"Saved Pokémon size for {sanitized_name} as cache.txt in IT/cache/")
-
                 break
 
-        # Handle reward confirmation and pause if no reward after guess
+        # Handle reward confirmation
         elif "The pokemon was " in event.message.text:
-            if "+5 💵" in event.message.text:
+            if"guessed" && "+5 💵" in event.message.text:
                 print(f"Reward received in chat {event.chat_id}. Continuing guesses.")
                 if event.chat_id in paused_chats:
                     paused_chats.remove(event.chat_id)
