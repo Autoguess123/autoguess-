@@ -1,205 +1,150 @@
+import random
 import os
-import re
 import asyncio
+import re
 from telethon import events, TelegramClient
 from telethon.tl.types import PhotoStrippedSize
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
-from telegram.ext import Application, MessageHandler, ContextTypes, CommandHandler, filters
-import logging
-from aiohttp import web
+import shutil
 
-# Enable logging
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+# Telegram API credentials
+api_id = 2282111
+api_hash = 'da58a1841a16c352a2a999171bbabcad'
 
-# Environment Variables
-API_ID = int(os.getenv("API_ID", "2282111"))
-API_HASH = os.getenv("API_HASH", "da58a1841a16c352a2a999171bbabcad")
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7357384521:AAEELUVDMZzdrBlEaphntKxWB9zM9hl7yyk")
-BOT_USERNAME = os.getenv("BOT_USERNAME", "@hexaguess420_bot")
-CHAT_IDS = [-1002450653337, -1002329043138]
+# Account configurations
+accounts = [
+    {"session_name": "account1", "chat_ids": [-4582339132]},
+    {"session_name": "account2", "chat_ids": [-4543779814]},
+]
 
-# Directories
-TEMP_CACHE_DIR = "BET BOT/cache"
-FINAL_CACHE_DIR = "cache"
-os.makedirs(TEMP_CACHE_DIR, exist_ok=True)
-os.makedirs(FINAL_CACHE_DIR, exist_ok=True)
+# Cache directory
+cache_dir = "cache/"
+it_cache_dir = "IT/cache/"
+os.makedirs(cache_dir, exist_ok=True)  # Ensure the cache directory exists
+os.makedirs(it_cache_dir, exist_ok=True)  # Ensure the IT cache directory exists
 
-# Initialize Telethon Client
-guess_solver = TelegramClient("temp", API_ID, API_HASH)
+def sanitize_filename(filename):
+    """Sanitize the filename by removing invalid characters."""
+    return re.sub(r'[<>:"/\\|?*]', '_', filename)
 
-# Initialize Telegram Bot API Application
-telegram_app = Application.builder().token(BOT_TOKEN).build()
+async def send_guess_periodically(client, chat_ids):
+    """Send /guess to all specified chats every minute."""
+    while True:
+        for chat_id in chat_ids:
+            try:
+                await client.send_message(chat_id, '/guess')
+                print(f"Periodic /guess sent to chat {chat_id}.")
+            except Exception as e:
+                print(f"Error sending /guess to chat {chat_id}: {e}")
+        await asyncio.sleep(60)  # Wait for 1 minute before sending again
 
+async def run_account(account):
+    """Run a single Telegram account with its associated chats."""
+    client = TelegramClient(account["session_name"], api_id, api_hash)
+    chat_ids = account["chat_ids"]
+    last_guess_times = {chat_id: 0 for chat_id in chat_ids}  # Track the last guess time for each chat
+    photo_cache = {}  # Store sizes temporarily for unsaved Pokémon
 
-def sanitize_filename(name):
-    """Remove invalid characters from filenames."""
-    return re.sub(r'[<>:"/\\|?*]', '', name)
+    @client.on(events.NewMessage(from_users=572621020, pattern="Who's that pokemon?", incoming=True))
+    async def guesser(event):
+        if event.chat_id not in chat_ids:
+            return  # Ignore messages from chats not assigned to this account
 
+        # Sleep for 2 seconds before starting the guessing process
+        await asyncio.sleep(2)
 
-async def delete_message_later(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int, delay: int = 10):
-    """Deletes a message after a specified delay."""
-    await asyncio.sleep(delay)
-    try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-        logger.info(f"Deleted message {message_id} in chat {chat_id}")
-    except Exception as e:
-        logger.error(f"Failed to delete message {message_id}: {e}")
-
-
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handles the /start command in bot's DM."""
-    if update.message.chat.type == "private":  # Ensure it's in a private chat (DM)
-        await update.message.reply_text(
-            text="🌟 Welcome to the Pokémon Guessing Bot! 🌟\n\n"
-                 "🎮 Join the game and have fun!\n\n"
-                 "👉 Click here to join the group: [Join Now](https://t.me/+ikG7sJXB9toyZGRl)",
-            parse_mode="markdown"
-        )
-
-
-@guess_solver.on(events.NewMessage(from_users=572621020, chats=tuple(CHAT_IDS), incoming=True))
-async def guesser(event):
-    """Handles Pokémon guessing game messages."""
-    correct_name = None
-
-    if event.message.photo:
+        correct_name = None
         for size in event.message.photo.sizes:
             if isinstance(size, PhotoStrippedSize):
-                size = str(size)
+                size = str(size)  # Ensure it's converted to string
 
-            for file in os.listdir(FINAL_CACHE_DIR):
-                with open(f"{FINAL_CACHE_DIR}/{file}", "rb") as f:
+            # Search for the Pokémon in the cache
+            for file in os.listdir(cache_dir):
+                with open(f"{cache_dir}/{file}", "rb") as f:
                     file_content = f.read()
                     if file_content == size.encode("utf-8"):
                         correct_name = file.split(".txt")[0]
                         break
 
             if correct_name:
-                message_text = f"🌟 **Who's That Pokémon?** 🌟\n\n1️⃣ {correct_name}\n\n📝 Pick your guess and type it below!"
-                await guess_solver.send_message(
-                    BOT_USERNAME, f"GroupID: {event.chat_id}\n{message_text}", parse_mode="markdown"
-                )
-            break
+                # Send the correct Pokémon name
+                await client.send_message(event.chat_id, correct_name)
+                print(f"Guessed Pokémon in chat {event.chat_id}: {correct_name}")
 
-        temp_cache_path = f"{TEMP_CACHE_DIR}/cache.txt"
-        with open(temp_cache_path, "wb") as file:
-            file.write(size.encode("utf-8"))
-        logger.info(f"Stripped size saved temporarily in {temp_cache_path}")
-    else:
-        logger.warning("No photo found in the message.")
+                # Wait 2 seconds before sending the /guess command
+                await asyncio.sleep(5)
+                await client.send_message(event.chat_id, '/guess')
+                print(f"Sent /guess command in chat {event.chat_id}.")
 
-
-async def forward_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Forwards Pokémon guessing messages to the appropriate group."""
-    if update.message.chat_id == update.effective_user.id:
-        match = re.search(r"GroupID: (-\d+)", update.message.text)
-        if match:
-            group_chat_id = int(match.group(1))  # Extract Group ID
-            message_text = re.sub(r"GroupID: -\d+\n", "", update.message.text)
-            correct_option = re.search(r"1️⃣ (.+)", message_text)
-
-            if correct_option:
-                correct_answer = correct_option.group(1)
-                keyboard = [
-                    [KeyboardButton(correct_answer)],[KeyboardButton("/guess")]
-                    
-                ]
-                reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-                try:
-                    sent_message = await context.bot.send_message(
-                        chat_id=group_chat_id,
-                        text="🌟 **Who's That Pokémon?** 🌟\n\n📝 Type your guess or tap below:",
-                        reply_markup=reply_markup,
-                        parse_mode="markdown"
-                    )
-                    logger.info(f"Message successfully sent to group {group_chat_id}.")
-                    asyncio.create_task(delete_message_later(context, group_chat_id, sent_message.message_id))
-                except Exception as e:
-                    logger.error(f"Error sending message to group {group_chat_id}: {e}")
+                # Update last_guess_time after sending /guess
+                last_guess_times[event.chat_id] = asyncio.get_event_loop().time()
             else:
-                logger.warning("Correct answer not found in the message text.")
+                print(f"No cached size found for {size}. Saving for future use.")
+                sanitized_name = sanitize_filename(str(size))
+                # Save the size as a new file in the IT cache directory
+                it_cache_path = f"{it_cache_dir}/cache.txt"
+                with open(it_cache_path, "wb") as file:
+                    file.write(size.encode("utf-8"))
+                print(f"Saved Pokémon size for {sanitized_name} as cache.txt in IT/cache/")
+
+            break  # Exit the loop after handling the first photo
+
+    @client.on(events.NewMessage(from_users=572621020, pattern="The pokemon was ", incoming=True))
+    async def cache_pokemon(event):
+        if event.chat_id not in chat_ids:
+            return  # Ignore messages from chats not assigned to this account
+
+        # Wait for the Pokémon name to appear in the message
+        pokemon_name = event.message.text.split("The pokemon was ")[1].split(" ")[0]
+        sanitized_name = sanitize_filename(pokemon_name)
+
+        # Move the cache.txt file to the final cache directory with the Pokémon name
+        it_cache_path = f"{it_cache_dir}/cache.txt"
+        final_cache_path = f"{cache_dir}/{sanitized_name}.txt"
+
+        if os.path.exists(it_cache_path):
+            # Move the file from IT/cache/ to the final cache location
+            shutil.move(it_cache_path, final_cache_path)
+            print(f"Moved cached Pokémon for chat {event.chat_id}: {sanitized_name} to cache.")
+
+            # Optionally write Pokémon info to a log or perform other operations here
+            with open(final_cache_path, 'a') as file:
+                file.write(f"Pokémon name: {sanitized_name}\n")
+
+            # Wait 60 seconds before sending /guess again
+            await asyncio.sleep(60)
+            await client.send_message(event.chat_id, '/guess')
+            print(f"Resuming /guess in chat {event.chat_id}.")
         else:
-            logger.warning("Group ID not found in the message text.")
+            print(f"No cached size found for {sanitized_name} in IT/cache/.")
 
+    @client.on(events.NewMessage(from_users=572621020, pattern="⚠ Too many commands are being used", incoming=True))
+    async def handle_too_many_commands(event):
+        """Handle 'Too many commands' message."""
+        if event.chat_id not in chat_ids:
+            return  # Ignore messages from chats not assigned to this account
 
-@guess_solver.on(events.NewMessage(from_users=572621020, pattern="The pokemon was ", chats=tuple(CHAT_IDS)))
-async def cache_pokemon(event):
-    """Caches the Pokémon name with its stripped size."""
-    pokemon_name = ((event.message.text).split("The pokemon was ")[1]).split(" ")[0]
-    sanitized_name = sanitize_filename(pokemon_name)
+        print(f"Too many commands in chat {event.chat_id}. Waiting for 20 seconds.")
+        await asyncio.sleep(20)  # Wait for 20 seconds before resuming
+        print(f"Resuming guesses in chat {event.chat_id}.")
+        await client.send_message(event.chat_id, '/guess')
 
-    temp_cache_path = f"{TEMP_CACHE_DIR}/cache.txt"
-    final_cache_path = f"{FINAL_CACHE_DIR}/{sanitized_name}.txt"
+    # Start the client
+    await client.start()
+    print(f"Bot started for account: {account['session_name']}")
 
-    try:
-        with open(temp_cache_path, "rb") as inf:
-            file_content = inf.read()
-            with open(final_cache_path, "wb") as file:
-                file.write(file_content)
-        os.remove(temp_cache_path)
-        logger.info(f"Pokémon '{sanitized_name}' cached successfully in {final_cache_path}.")
-    except Exception as e:
-        logger.error(f"Error caching Pokémon: {e}")
+    # Start the periodic /guess task
+    asyncio.create_task(send_guess_periodically(client, chat_ids))
 
+    # Send /guess when the bot starts
+    for chat_id in chat_ids:
+        await client.send_message(chat_id, '/guess')
+        print(f"Sent initial /guess in chat {chat_id}.")
 
-async def start_telethon_client():
-    """Start the Telethon client with retry logic."""
-    while True:
-        try:
-            await guess_solver.start()
-            logger.info("Telethon client started. Listening for messages...")
-            break
-        except Exception as e:
-            logger.error(f"Telethon client connection failed: {e}")
-            await asyncio.sleep(5)
-
-
-async def start_telegram_bot():
-    """Start the Telegram bot with retry logic."""
-    while True:
-        try:
-            await telegram_app.initialize()
-            logger.info("Telegram Bot Application initialized.")
-            await telegram_app.start()
-            logger.info("Telegram Bot Application started.")
-            break
-        except Exception as e:
-            logger.error(f"Telegram bot connection failed: {e}")
-            await asyncio.sleep(5)
-
-
-async def health_check(request):
-    """Health check endpoint."""
-    return web.Response(text="OK", status=200)
-
-
-async def start_health_server():
-    """Starts a lightweight HTTP server for health checks."""
-    app = web.Application()
-    app.add_routes([web.get("/", health_check)])  # Responds to GET requests on '/'
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 8000)  # Listen on port 8000
-    await site.start()
-    logger.info("Health check server running on port 8000")
-
+    await client.run_until_disconnected()
 
 async def main():
-    telegram_app.add_handler(CommandHandler("start", start_command))
-    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, forward_message))
+    """Run all accounts concurrently."""
+    tasks = [run_account(account) for account in accounts]
+    await asyncio.gather(*tasks)
 
-    task_telethon = asyncio.create_task(start_telethon_client())
-    task_bot = asyncio.create_task(start_telegram_bot())
-    task_health_check = asyncio.create_task(start_health_server())
-
-    await asyncio.gather(task_telethon, task_bot, task_health_check)
-    await asyncio.gather(guess_solver.run_until_disconnected(), telegram_app.updater.start_polling())
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())
