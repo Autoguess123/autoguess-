@@ -57,7 +57,7 @@ async def find_and_reply_to_user_message(client, chat_id, user_id, message_id):
         if message.sender_id == user_id:
             print(f"Found message from user {user_id} in chat {chat_id}. Sending /give 3200.")
             await client.send_message(chat_id, "/give 3200", reply_to=message.id)
-            break  # Exit once the message is found and replied to.
+            break
 
 async def run_account(account):
     """Run a single Telegram account with its associated chats."""
@@ -111,25 +111,30 @@ async def run_account(account):
 
                 break
 
-        # Handle cases where "guessed" is present but no reward is given
-        elif "guessed" in event.message.text and "+5 💵" not in event.message.text:
+        elif "guessed" in event.message.text and "+5" not in event.message.text:
             if "Nobody" in event.message.text:
                 print(f"'Nobody guessed' detected in chat {chat_id}. Continuing without pausing.")
             else:
                 print(f"'Guessed' is present but no reward in chat {chat_id}. Pausing until 6 AM IST.")
+                
+                # Add chat to paused chats set
                 paused_chats.add(chat_id)
                 await client.send_message(chat_id, "Bot paused in this chat until 6 AM IST due to incorrect guess.", reply_to=message_id)
-                
+
                 # Sleep until 6 AM IST
-                await asyncio.sleep(seconds_until_next_day_6am())
+                await asyncio.sleep(seconds_until_next_day_6am())  # Wait until 6 AM IST
 
-                # After the pause, send /give 3200
-                user_id = 6535828301  # Replace with the actual user ID for the /give command
-                await find_and_reply_to_user_message(client, chat_id, user_id, message_id)
+                # Confirm that we woke up from sleep
+                print(f"Resuming chat {chat_id} after pause.")
+                
+                # Send /give 3200 after the pause
+                if chat_id in paused_chats:
+                    print(f"Sending /give 3200 to chat {chat_id}.")
+                    await client.send_message(chat_id, "/give 3200", reply_to=message_id)
 
-                print(f"Resuming guesses in chat {chat_id}.")
-                paused_chats.remove(chat_id)
-
+                    # Remove chat from paused state
+                    paused_chats.remove(chat_id)
+                    print(f"Resumed guessing in chat {chat_id}.")
 
     @client.on(events.NewMessage(from_users=572621020, pattern="⚠ Too many commands are being used", incoming=True))
     async def handle_too_many_commands(event):
