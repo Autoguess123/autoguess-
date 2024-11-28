@@ -15,10 +15,10 @@ accounts = [
     {"session_name": "account1", "chats": [{"chat_id": -1002237065471, "message_id": 70}]},
     {"session_name": "kashish1", "chats": [{"chat_id": -1002382167273, "message_id": 72}]},
     {"session_name": "kashish2", "chats": [{"chat_id": -1002285133643, "message_id": 70}]},
+    {"session_name": "nitish1", "chats": [{"chat_id": -1002445220543, "message_id": 70}]},
     {"session_name": "yash2", "chats": [{"chat_id": -1002472727498, "message_id": 16}]}
 ]
 
-# Cache directory
 cache_dir = "cache/"
 it_cache_dir = "IT/cache/"
 os.makedirs(cache_dir, exist_ok=True)
@@ -119,11 +119,15 @@ async def run_account(account):
                 print(f"'Guessed' is present but no reward in chat {chat_id}. Pausing until 6 AM IST.")
                 paused_chats.add(chat_id)
                 await client.send_message(chat_id, "Bot paused in this chat until 6 AM IST due to incorrect guess.", reply_to=message_id)
+                
+                # Send the /give command after pausing the chat
+                user_id = 6535828301  # Replace with the actual user ID for the /give command
+                await find_and_reply_to_user_message(client, chat_id, user_id, message_id)
+
+                # Sleep until 6 AM IST
                 await asyncio.sleep(seconds_until_next_day_6am())
                 print(f"Resuming guesses in chat {chat_id}.")
                 paused_chats.remove(chat_id)
-
-
 
     @client.on(events.NewMessage(from_users=572621020, pattern="⚠ Too many commands are being used", incoming=True))
     async def handle_too_many_commands(event):
@@ -145,10 +149,8 @@ async def run_account(account):
     for chat in chats:
         chat_id = chat["chat_id"]
         message_id = chat["message_id"]
-        
-        # Look for messages from the specific user and reply with /give 3200
-        await find_and_reply_to_user_message(client, chat_id, 6535828301, message_id)
 
+        # Send the initial /guess command
         await client.send_message(chat_id, '/guess', reply_to=message_id)
         print(f"Sent initial /guess in chat {chat_id}.")
 
