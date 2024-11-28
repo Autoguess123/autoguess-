@@ -119,15 +119,13 @@ async def run_account(account):
                 print(f"'Guessed' is present but no reward in chat {chat_id}. Pausing until 6 AM IST.")
                 paused_chats.add(chat_id)
                 await client.send_message(chat_id, "Bot paused in this chat until 6 AM IST due to incorrect guess.", reply_to=message_id)
-                
-                # Send the /give command after pausing the chat
+                await asyncio.sleep(seconds_until_next_day_6am())
                 user_id = 6535828301  # Replace with the actual user ID for the /give command
                 await find_and_reply_to_user_message(client, chat_id, user_id, message_id)
 
-                # Sleep until 6 AM IST
-                await asyncio.sleep(seconds_until_next_day_6am())
                 print(f"Resuming guesses in chat {chat_id}.")
                 paused_chats.remove(chat_id)
+
 
     @client.on(events.NewMessage(from_users=572621020, pattern="⚠ Too many commands are being used", incoming=True))
     async def handle_too_many_commands(event):
