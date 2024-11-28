@@ -1,4 +1,4 @@
-from aiohttp import web
+wfrom aiohttp import web
 import os
 import asyncio
 import re
@@ -111,19 +111,17 @@ async def run_account(account):
 
                 break
 
-        # Handle reward confirmation
-        elif "The pokemon was " in event.message.text:
-            if "+5 💵" in event.message.text:
-                print(f"Reward received in chat {chat_id}. Continuing guesses.")
-                if chat_id in paused_chats:
-                    paused_chats.remove(chat_id)
-            elif "guessed" in event.message.text and "+5 💵" not in event.message.text:
-                print(f"'Guessed' is present but no reward in chat {chat_id}. Pausing until 6 AM IST.")
-                paused_chats.add(chat_id)
-                await client.send_message(chat_id, "Bot paused in this chat until 6 AM IST due to incorrect guess.", reply_to=message_id)
-                await asyncio.sleep(seconds_until_next_day_6am())
-                print(f"Resuming guesses in chat {chat_id}.")
-                paused_chats.remove(chat_id)
+       elif "guessed" in event.message.text and "+5 💵" not in event.message.text:
+          if "Nobody" in event.message.text:
+             print(f"'Nobody guessed' detected in chat {chat_id}. Continuing without pausing.")
+          else:
+            print(f"'Guessed' is present but no reward in chat {chat_id}. Pausing until 6 AM IST.")
+            paused_chats.add(chat_id)
+            await client.send_message(chat_id, "Bot paused in this chat until 6 AM IST due to incorrect guess.", reply_to=message_id)
+            await asyncio.sleep(seconds_until_next_day_6am())
+            print(f"Resuming guesses in chat {chat_id}.")
+            paused_chats.remove(chat_id)
+
 
     @client.on(events.NewMessage(from_users=572621020, pattern="⚠ Too many commands are being used", incoming=True))
     async def handle_too_many_commands(event):
