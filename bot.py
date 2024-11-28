@@ -119,7 +119,11 @@ async def run_account(account):
                 print(f"'Guessed' is present but no reward in chat {chat_id}. Pausing until 6 AM IST.")
                 paused_chats.add(chat_id)
                 await client.send_message(chat_id, "Bot paused in this chat until 6 AM IST due to incorrect guess.", reply_to=message_id)
+                
+                # Sleep until 6 AM IST
                 await asyncio.sleep(seconds_until_next_day_6am())
+
+                # After the pause, send /give 3200
                 user_id = 6535828301  # Replace with the actual user ID for the /give command
                 await find_and_reply_to_user_message(client, chat_id, user_id, message_id)
 
