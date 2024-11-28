@@ -14,6 +14,7 @@ api_hash = 'da58a1841a16c352a2a999171bbabcad'
 accounts = [
     {"session_name": "account1", "chats": [{"chat_id": -1002237065471, "message_id": 70}]},
     {"session_name": "kashish1", "chats": [{"chat_id": -1002382167273, "message_id": 72}]},
+    {"session_name": "kashish2", "chats": [{"chat_id": -1002285133643, "message_id": 70}]},
     {"session_name": "yash2", "chats": [{"chat_id": -1002472727498, "message_id": 16}]}
 ]
 
