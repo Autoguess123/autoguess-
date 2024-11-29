@@ -36,10 +36,11 @@ def seconds_until_next_day_6am():
         next_6am += timedelta(days=1)
     return (next_6am - now).seconds
 
-async def send_guess_periodically(client, chat_ids, paused_chats):
+async def send_guess_periodically(client, chats, paused_chats):
     """Send /guess to all specified chats every minute if not paused."""
     while True:
-        for chat_id in chat_ids:
+        for chat in chats:
+            chat_id = chat['chat_id']
             if chat_id in paused_chats:
                 print(f"Chat {chat_id} is paused. Skipping /guess.")
                 continue
@@ -50,22 +51,35 @@ async def send_guess_periodically(client, chat_ids, paused_chats):
                 print(f"Error sending /guess to chat {chat_id}: {e}")
         await asyncio.sleep(60)
 
+async def find_and_reply_to_user_message(client, chat_id, user_id, message_id):
+    """Find the message from a specific user and reply with /give 3200."""
+    async for message in client.iter_messages(chat_id):
+        if message.sender_id == user_id:
+            print(f"Found message from user {user_id} in chat {chat_id}. Sending /give 3200.")
+            await client.send_message(chat_id, "/give 3200", reply_to=message.id)
+            break  # Exit once the message is found and replied to.
+
 async def run_account(account):
     """Run a single Telegram account with its associated chats."""
     client = TelegramClient(account["session_name"], api_id, api_hash)
-    chat_ids = account["chat_ids"]
+    chats = account["chats"]
     paused_chats = set()  # Track chats that are paused
 
     @client.on(events.NewMessage(from_users=572621020, incoming=True))
     async def handle_bot_message(event):
         """Handle bot messages to guess Pokémon and check rewards."""
-        if event.chat_id not in chat_ids:
+        chat_id = event.chat_id
+        message_id = event.message.id
+
+        # Check if the message is from a relevant chat
+        relevant_chat = next((chat for chat in chats if chat['chat_id'] == chat_id), None)
+        if not relevant_chat:
             return
 
         # Handle "Who's that Pokémon?" prompt
         if "Who's that pokemon?" in event.message.text:
-            if event.chat_id in paused_chats:
-                print(f"Chat {event.chat_id} is paused. Ignoring Pokémon guess.")
+            if chat_id in paused_chats:
+                print(f"Chat {chat_id} is paused. Ignoring Pokémon guess.")
                 return
 
             await asyncio.sleep(2)
@@ -82,11 +96,11 @@ async def run_account(account):
                             break
 
                 if correct_name:
-                    await client.send_message(event.chat_id, correct_name)
-                    print(f"Guessed Pokémon in chat {event.chat_id}: {correct_name}")
+                    await client.send_message(chat_id, correct_name, reply_to=message_id)
+                    print(f"Guessed Pokémon in chat {chat_id}: {correct_name}")
                     await asyncio.sleep(5)
-                    await client.send_message(event.chat_id, '/guess')
-                    print(f"Sent /guess command in chat {event.chat_id}.")
+                    await client.send_message(chat_id, '/guess', reply_to=message_id)
+                    print(f"Sent /guess command in chat {chat_id}.")
                 else:
                     print(f"No cached size found for {size}. Saving for future use.")
                     sanitized_name = sanitize_filename(str(size))
@@ -94,40 +108,50 @@ async def run_account(account):
                     with open(it_cache_path, "wb") as file:
                         file.write(size.encode("utf-8"))
                     print(f"Saved Pokémon size for {sanitized_name} as cache.txt in IT/cache/")
+
                 break
 
-        # Handle reward confirmation
-        elif "The pokemon was " in event.message.text:
-            if "+5 💵" in event.message.text:
-                print(f"Reward received in chat {event.chat_id}. Continuing guesses.")
-                if event.chat_id in paused_chats:
-                    paused_chats.remove(event.chat_id)
-            elif "guessed" in event.message.text and "+5 💵" not in event.message.text:
-                print(f"'Guessed' is present but no reward in chat {event.chat_id}. Pausing until 6 AM IST.")
-                paused_chats.add(event.chat_id)
-                await client.send_message(event.chat_id, "Bot paused in this chat until 6 AM IST due to incorrect guess.")
-                await asyncio.sleep(seconds_until_next_day_6am())
-                print(f"Resuming guesses in chat {event.chat_id}.")
-                paused_chats.remove(event.chat_id)
+        # Handle cases where "guessed" is present but no reward is given
+        elif "guessed" in event.message.text and "+5 💵" not in event.message.text:
+            if "Nobody" in event.message.text:
+                print(f"'Nobody guessed' detected in chat {chat_id}. Continuing without pausing.")
             else:
-                print(f"No specific conditions met in chat {event.chat_id}. Continuing guesses.")
+                print(f"'Guessed' is present but no reward in chat {chat_id}. Pausing until 6 AM IST.")
+                paused_chats.add(chat_id)
+                await client.send_message(chat_id, "Bot paused in this chat until 6 AM IST due to incorrect guess.", reply_to=message_id)
+                
+                # Send the /give command after pausing the chat
+                user_id = 6535828301  # Replace with the actual user ID for the /give command
+                await find_and_reply_to_user_message(client, chat_id, user_id, message_id)
+
+                # Sleep until 6 AM IST
+                await asyncio.sleep(seconds_until_next_day_6am())
+                print(f"Resuming guesses in chat {chat_id}.")
+                paused_chats.remove(chat_id)
 
     @client.on(events.NewMessage(from_users=572621020, pattern="⚠ Too many commands are being used", incoming=True))
     async def handle_too_many_commands(event):
         """Handle 'Too many commands' message."""
-        if event.chat_id not in chat_ids:
+        chat_id = event.chat_id
+        relevant_chat = next((chat for chat in chats if chat['chat_id'] == chat_id), None)
+        if not relevant_chat:
             return
-        print(f"Too many commands in chat {event.chat_id}. Waiting for 20 seconds.")
+        message_id = event.message.id
+        print(f"Too many commands in chat {chat_id}. Waiting for 20 seconds.")
         await asyncio.sleep(20)
-        print(f"Resuming guesses in chat {event.chat_id}.")
-        await client.send_message(event.chat_id, '/guess')
+        print(f"Resuming guesses in chat {chat_id}.")
+        await client.send_message(chat_id, '/guess', reply_to=message_id)
 
     await client.start()
     print(f"Bot started for account: {account['session_name']}")
-    asyncio.create_task(send_guess_periodically(client, chat_ids, paused_chats))
+    asyncio.create_task(send_guess_periodically(client, chats, paused_chats))
 
-    for chat_id in chat_ids:
-        await client.send_message(chat_id, '/guess')
+    for chat in chats:
+        chat_id = chat["chat_id"]
+        message_id = chat["message_id"]
+
+        # Send the initial /guess command
+        await client.send_message(chat_id, '/guess', reply_to=message_id)
         print(f"Sent initial /guess in chat {chat_id}.")
 
     await client.run_until_disconnected()
@@ -153,3 +177,4 @@ async def main():
     await asyncio.gather(*tasks)
 
 asyncio.run(main())
+
